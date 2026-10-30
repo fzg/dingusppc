@@ -41,6 +41,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <string>
 
+#include <endian.h>
+
 #ifdef DEBUG_CPU_INT
 #include <machines/machinebase.h>
 #include <devices/common/viacuda.h>
@@ -359,20 +361,21 @@ static void dump_mem(string& params) {
 }
 
 // ddump N,X F
-static void diskdump_mem(string& params) {
+static void diskdump_mem(string& params, string &filename) {
     uint32_t addr, count;
     int cell_size = 8;
     uint64_t val;
-    string addr_str, size_str, filename_str;
+    string addr_str, size_str;
 
+    addr_str  = params.substr(0, params.find_first_of(","));
+    size_str = params.substr(params.find_first_of(",") + 1);
+    cout << params << ": " << addr_str << ", " << size_str << "to " << filename << endl;
     if (params.find_first_of(",") == std::string::npos && params.find_first_of(" ") == std::string::npos) {
         cout << "diskdump_mem: not enough arguments specified. Try 'help'." << endl;
         return;
     }
-    addr_str  = params.substr(0, params.find_first_of(","));
-    size_str = params.substr(params.find_first_of(",") + 1);
-    filename_str = params.substr(params.find_first_of(" ") + 1);
-    try {
+
+   try {
         addr = str2addr(addr_str);
     } catch (invalid_argument& exc) {
         try {
@@ -384,26 +387,33 @@ static void diskdump_mem(string& params) {
         }
     }
     try {
-        count        = str2addr(size_str);
+        count = str2addr(size_str);
     } catch (invalid_argument& exc) {
         cout << exc.what() << endl;
         return;
     }
 
-
-    ofstream dump_file;
+    FILE *dump_file;
     try {
-        dump_file.open(filename_str, ofstream::out | ofstream::app | ofstream::trunc);
-    } catch (invalid_argument &exc) {
+        dump_file = fopen(filename.c_str(), "wb");
+    } catch (std::exception &exc) {
         cout << exc.what() << endl;
     }
-    cout << "Dumping memory at address " << hex << addr << " to file " << filename_str << endl;
-    for (int i = 0; i < count; ++i, addr += cell_size) {
-         val = mem_read_dbg(addr, cell_size);
-         dump_file << val;
+    if (!dump_file) {
+        cout << "Failed opening dumpfile: " << strerror(errno) << endl;
+        return;
     }
-    dump_file.close();
-
+    cout << "Dumping memory at address " << hex << addr << " to file " << filename << endl;
+    for (int i = 0; i < count; ++i, addr += cell_size) {
+        try {
+            val = mem_read_dbg(addr, cell_size);
+            val = htobe64(val);  // TODO check if host endianness matches VM
+        } catch (const std::exception &exc) {
+            val = '\0';
+        }
+        fwrite(&val, sizeof(val), 1, dump_file);
+    }
+    fclose(dump_file);
 }
 
 static void patch_mem(string& params) {
@@ -1100,9 +1110,11 @@ void DppcDebugger::enter_debugger() {
             ss >> expr_str;
             dump_mem(expr_str);
         } else if (cmd == "ddump") {
+            std::string dump_name;
             expr_str = "";
             ss >> expr_str;
-            diskdump_mem(expr_str);
+            ss >> dump_name;
+            diskdump_mem(expr_str, dump_name);
         } else if (cmd == "setmem") {
             expr_str = "";
             ss >> expr_str;
