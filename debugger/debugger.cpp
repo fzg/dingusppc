@@ -408,7 +408,7 @@ static void diskdump_mem(string& params) {
 
 static void patch_mem(string& params) {
     int value_size = 1;
-    uint32_t addr, count, value;
+    uint32_t addr, value;
     string addr_str, value_str, size_str;
 
     if (params.find_first_of("=") == std::string::npos) {
