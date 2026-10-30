@@ -93,6 +93,7 @@ static void show_help() {
     cout << "                    if R=loglevel, set the internal" << endl;
     cout << "                    log level to X whose range is -2...9" << endl;
     cout << "  dump NT,X      -- dump N memory cells of size T at address X" << endl;
+    cout << "  ddump N,X F   --   same, to disk file F" << endl;
     cout << "                    T can be b(byte), w(word), d(double)," << endl;
     cout << "                    q(quad) or c(character)." << endl;
     cout << "  setmem X=V.T   -- set memory at address X to value V of size T" << endl;
@@ -357,9 +358,57 @@ static void dump_mem(string& params) {
     cout << endl << endl;
 }
 
+// ddump N,X F
+static void diskdump_mem(string& params) {
+    uint32_t addr, count;
+    int cell_size = 8;
+    uint64_t val;
+    string addr_str, size_str, filename_str;
+
+    if (params.find_first_of(",") == std::string::npos && params.find_first_of(" ") == std::string::npos) {
+        cout << "diskdump_mem: not enough arguments specified. Try 'help'." << endl;
+        return;
+    }
+    addr_str  = params.substr(0, params.find_first_of(","));
+    size_str = params.substr(params.find_first_of(",") + 1);
+    filename_str = params.substr(params.find_first_of(" ") + 1);
+    try {
+        addr = str2addr(addr_str);
+    } catch (invalid_argument& exc) {
+        try {
+            /* number conversion failed, trying reg name */
+            addr = get_reg(addr_str);
+        } catch (invalid_argument& exc) {
+            cout << exc.what() << endl;
+            return;
+        }
+    }
+    try {
+        count        = str2addr(size_str);
+    } catch (invalid_argument& exc) {
+        cout << exc.what() << endl;
+        return;
+    }
+
+
+    ofstream dump_file;
+    try {
+        dump_file.open(filename_str, ofstream::out | ofstream::app | ofstream::trunc);
+    } catch (invalid_argument &exc) {
+        cout << exc.what() << endl;
+    }
+    cout << "Dumping memory at address " << hex << addr << " to file " << filename_str << endl;
+    for (int i = 0; i < count; ++i, addr += cell_size) {
+         val = mem_read_dbg(addr, cell_size);
+         dump_file << val;
+    }
+    dump_file.close();
+
+}
+
 static void patch_mem(string& params) {
     int value_size = 1;
-    uint32_t addr, value;
+    uint32_t addr, count, value;
     string addr_str, value_str, size_str;
 
     if (params.find_first_of("=") == std::string::npos) {
@@ -1050,6 +1099,10 @@ void DppcDebugger::enter_debugger() {
             expr_str = "";
             ss >> expr_str;
             dump_mem(expr_str);
+        } else if (cmd == "ddump") {
+            expr_str = "";
+            ss >> expr_str;
+            diskdump_mem(expr_str);
         } else if (cmd == "setmem") {
             expr_str = "";
             ss >> expr_str;
